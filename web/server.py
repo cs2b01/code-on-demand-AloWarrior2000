@@ -1,6 +1,7 @@
 from flask import Flask,render_template, request, session, Response, redirect
 from database import connector
 from model import entities
+from flask_socketio import SocketIO
 import json
 import time
 
@@ -8,10 +9,14 @@ db = connector.Manager()
 engine = db.createEngine()
 
 app = Flask(__name__)
+socketio = SocketIO(app)
 
 @app.route('/')
 def index():
     return render_template('index.html')
+
+def messageReceived(methods=['GET', 'POST']):
+    print('message was received!!!')
 
 @app.route('/static/<content>')
 def static_content(content):
@@ -61,9 +66,31 @@ def create_user():
     session.commit()
     return 'Created User'
 
+@app.route('/users', methods = ['PUT'])
+def update_user():
+    session = db.getSession(engine)
+    id = request.form['key']
+    user = session.query(entities.User).filter(entities.User.id == id).first()
+    c =  json.loads(request.form['values'])
+    for key in c.keys():
+        setattr(user, key, c[key])
+    session.add(user)
+    session.commit()
+    return 'Updated User'
+
+@app.route('/users', methods = ['DELETE'])
+def delete_user():
+    id = request.form['key']
+    session = db.getSession(engine)
+    user = session.query(entities.User).filter(entities.User.id == id)
+    for key in user:
+        session.delete(key)
+    session.commit()
+    return "Deleted users"
+
 @app.route('/authenticate', methods = ["POST"])
 def authenticate():
-    time.sleep(8)
+    time.sleep(3)
     message = json.loads(request.data)
     username = message['username']
     password = message['password']
@@ -80,6 +107,11 @@ def authenticate():
         message = {'message': 'Unauthorized'}
         return Response(message, status=401, mimetype='application/json')
 
+
+@socketio.on('my event')
+def handle_my_custom_event(json, methods=['POST']):
+    print('received my event: ' + str(json))
+    socketio.emit('my response', json, callback=messageReceived)
 
 if __name__ == '__main__':
     app.secret_key = ".."
